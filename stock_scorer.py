@@ -288,7 +288,8 @@ def custom_oscillator_scoring(osc_val: float, ideal: float = 46.0, poor: float =
     else:
         # Above target: exponential penalty
         excess = (osc_val - ideal) / (poor - ideal)
-        score = 10.0 * np.exp(-2 * excess)
+        # Stronger penalty to reach near-zero at poor threshold
+        score = 10.0 * np.exp(-3.5 * excess)
     
     return max(0.0, min(10.0, score))
 
