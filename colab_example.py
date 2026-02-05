@@ -27,8 +27,9 @@ NFLX
 # Usually pre-installed in Colab
 # !pip install yfinance pandas numpy
 
-# Step 4: Download and run the stock scorer
-!wget https://raw.githubusercontent.com/amurthy-stock/code/main/stock_scorer.py
+# Step 4: Clone the repository and run the stock scorer
+!git clone https://github.com/amurthy-stock/code.git
+%cd code
 !python stock_scorer.py
 
 # Step 5: View results
