@@ -18,6 +18,15 @@ from tqdm import tqdm
 
 # --- Parse command-line arguments ---
 def parse_arguments():
+    """
+    Parse command-line arguments for the LSTM forecast script.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments containing:
+            - ticker_file: Path to file containing ticker symbols
+            - output_dir: Directory for output files
+            - batch_size: Number of tickers to process in each batch
+    """
     parser = argparse.ArgumentParser(description='Fibonacci LSTM Forecast Multi-Timeframe Script')
     parser.add_argument('--ticker-file', type=str, 
                        default=os.getenv('TICKER_FILE', '/content/drive/MyDrive/Outputs/Test_ticker.txt'),
@@ -36,8 +45,10 @@ args = parse_arguments()
 try:
     from google.colab import drive
     drive.mount('/content/drive')
-except Exception as e:
+except ImportError:
     print("Google Colab not detected, skipping drive mount")
+except Exception as e:
+    print(f"Warning: Failed to mount Google Drive: {str(e)}")
 
 # --- Load tickers from file and verify ---
 ticker_file = args.ticker_file
