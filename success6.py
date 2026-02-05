@@ -12,17 +12,46 @@ from tensorflow.keras.callbacks import EarlyStopping
 import gc
 import csv
 import os
+import sys
+import argparse
 from tqdm import tqdm
 
-# --- MOUNT GOOGLE DRIVE IN COLAB ---
+# --- Parse command-line arguments ---
+def parse_arguments():
+    """
+    Parse command-line arguments for the LSTM forecast script.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments containing:
+            - ticker_file: Path to file containing ticker symbols
+            - output_dir: Directory for output files
+            - batch_size: Number of tickers to process in each batch
+    """
+    parser = argparse.ArgumentParser(description='Fibonacci LSTM Forecast Multi-Timeframe Script')
+    parser.add_argument('--ticker-file', type=str, 
+                       default=os.getenv('TICKER_FILE', '/content/drive/MyDrive/Outputs/Test_ticker.txt'),
+                       help='Path to ticker file (default: from TICKER_FILE env var or Google Drive path)')
+    parser.add_argument('--output-dir', type=str,
+                       default=os.getenv('OUTPUT_DIR', '/content/drive/MyDrive/Outputs'),
+                       help='Output directory for results (default: from OUTPUT_DIR env var or Google Drive path)')
+    parser.add_argument('--batch-size', type=int, default=5,
+                       help='Batch size for processing tickers (default: 5)')
+    return parser.parse_args()
+
+# Parse arguments
+args = parse_arguments()
+
+# --- MOUNT GOOGLE DRIVE IN COLAB (if available) ---
 try:
     from google.colab import drive
     drive.mount('/content/drive')
+except ImportError:
+    print("Google Colab not detected, skipping drive mount")
 except Exception as e:
-    pass
+    print(f"Warning: Failed to mount Google Drive: {str(e)}")
 
 # --- Load tickers from file and verify ---
-ticker_file = '/content/drive/MyDrive/Outputs/Test_ticker.txt'
+ticker_file = args.ticker_file
 if not os.path.exists(ticker_file):
     raise FileNotFoundError(f"Ticker file '{ticker_file}' not found. Please check the file path.")
 
@@ -30,16 +59,37 @@ with open(ticker_file, 'r') as f:
     tickers = [line.strip() for line in f if line.strip()]
 
 if len(tickers) == 0:
-    raise ValueError("No tickers found in file. Please check the contents of Test_ticker.txt!")
+    raise ValueError("No tickers found in file. Please check the contents of the ticker file!")
+
+print(f"Loaded {len(tickers)} tickers from {ticker_file}")
 
 def batch_tickers(ticker_list, batch_size):
+    """
+    Generator function to yield batches of tickers for rate-limited API calls.
+    
+    Args:
+        ticker_list: List of ticker symbols
+        batch_size: Number of tickers per batch
+        
+    Yields:
+        List of tickers in each batch
+    """
     for i in range(0, len(ticker_list), batch_size):
         yield ticker_list[i:i+batch_size]
 
-batch_size = 5  # Adjust for rate limits
+batch_size = args.batch_size  # Configurable via command line
 
 # --- Helper Functions ---
 def build_lstm_model(input_shape):
+    """
+    Build and compile an LSTM model for time series forecasting.
+    
+    Args:
+        input_shape: Tuple of (timesteps, features) for the input layer
+        
+    Returns:
+        Compiled Keras Sequential model
+    """
     model = Sequential()
     model.add(Input(shape=input_shape))
     model.add(LSTM(50, return_sequences=False))
@@ -48,6 +98,9 @@ def build_lstm_model(input_shape):
     return model
 
 # --- Weekly LSTM Forecast ---
+print("\n" + "="*60)
+print("STARTING WEEKLY LSTM FORECAST")
+print("="*60)
 results = []
 window_size = 7
 forecast_steps = [1,2,3]
@@ -134,12 +187,16 @@ for ticker_batch in batch_tickers(tickers, batch_size):
             ]
             results.append(row)
         except Exception as e:
-            pass
+            print(f"Error processing {ticker} (weekly): {str(e)}", file=sys.stderr)
     time.sleep(2)
 
 results_sorted = sorted([row for row in results if row['Gain'] > 0], key=lambda x: x['Gain'], reverse=True)[:15]
+print(f"Weekly forecast complete: {len(results)} processed, {len(results_sorted)} with positive gain")
 
 # --- Daily LSTM Forecast ---
+print("\n" + "="*60)
+print("STARTING DAILY LSTM FORECAST")
+print("="*60)
 daily_results = []
 daily_window_size = 12
 daily_forecast_steps = [1,2,5]
@@ -228,12 +285,16 @@ for ticker_batch in batch_tickers(tickers, batch_size):
             ]
             daily_results.append(row)
         except Exception as e:
-            pass
+            print(f"Error processing {ticker} (daily): {str(e)}", file=sys.stderr)
     time.sleep(2)
 
 daily_results_sorted = sorted([row for row in daily_results if row['Gain'] > 0], key=lambda x: x['Gain'], reverse=True)[:15]
+print(f"Daily forecast complete: {len(daily_results)} processed, {len(daily_results_sorted)} with positive gain")
 
 # --- Hourly (60m) LSTM Forecast ---
+print("\n" + "="*60)
+print("STARTING HOURLY (60m) LSTM FORECAST")
+print("="*60)
 hourly_results = []
 hourly_window_size = 12
 hourly_forecast_steps = [3, 5, 8]
@@ -341,13 +402,19 @@ for ticker_batch in batch_tickers(tickers, batch_size):
                 ]
                 hourly_results.append(row)
         except Exception as e:
-            pass
+            print(f"Error processing {ticker} (hourly): {str(e)}", file=sys.stderr)
     time.sleep(2)
 
 hourly_results_sorted = sorted(hourly_results, key=lambda x: x['Gain_Hourly'], reverse=True)[:15]
+print(f"Hourly forecast complete: {len(hourly_results)} processed, {len(hourly_results_sorted)} with positive gain")
 
 # --- Combined Output CSV ---
-csv_path = '/content/drive/MyDrive/Outputs/Fibonacci_LSTM_results.csv'
+print("\n" + "="*60)
+print("GENERATING OUTPUT FILES")
+print("="*60)
+output_dir = args.output_dir
+os.makedirs(output_dir, exist_ok=True)
+csv_path = os.path.join(output_dir, 'Fibonacci_LSTM_results.csv')
 with open(csv_path, 'w', newline='') as csvfile:
     fieldnames = [
         # Weekly
@@ -486,7 +553,7 @@ axs[2].set_ylabel("Cumulative Gain")
 axs[2].grid(True)
 
 plt.tight_layout()
-combined_chart_path = '/content/drive/MyDrive/Outputs/Fibonacci_LSTM_combined_cumgain.png'
+combined_chart_path = os.path.join(output_dir, 'Fibonacci_LSTM_combined_cumgain.png')
 plt.savefig(combined_chart_path)
 plt.show()
 print(f"Weekly, Daily, and Hourly cumulative gain charts saved to {combined_chart_path}")
